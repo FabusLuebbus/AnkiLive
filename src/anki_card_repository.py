@@ -89,16 +89,23 @@ class AnkiCardRepository:
         self.cards_dir = cards_dir
         self.deck_name = deck_name
         self.media_dir = os.path.join(cards_dir, "media")
+        self.cards_data_dir = os.path.join(cards_dir, "data")
         
         # Ensure directories exist
         os.makedirs(self.cards_dir, exist_ok=True)
         os.makedirs(self.media_dir, exist_ok=True)
+        os.makedirs(self.cards_data_dir, exist_ok=True)
+
+        self.load_saved_cards()
         
         # Initialize the model
         self.model = AnkiCardModel().model
         
-        # Initialize the deck
-        self.deck = genanki.Deck(ANKI_DECK_ID, deck_name)
+        # Store notes in a list instead of immediately adding to deck
+        self.notes = []
+        
+        # Track media files
+        self.media_files = []
         
         logger.info(f"Initialized AnkiCardRepository with cards directory: {cards_dir}")
     
@@ -120,6 +127,9 @@ class AnkiCardRepository:
         screenshot.save(filepath)
         logger.info(f"Saved screenshot to {filepath}")
         
+        # Add to media files list
+        self.media_files.append(filepath)
+        
         return filename
     
     def convert_markdown_to_html(self, text: str) -> str:
@@ -136,14 +146,18 @@ class AnkiCardRepository:
         # The 'extras' parameter enables additional markdown features
         return markdown.markdown(text, extensions=['extra'])
     
-    def create_card(self, question: str, answer: str, screenshot: Image.Image) -> None:
+    def create_card(self, question: str, answer: str, screenshot: Image.Image) -> str:
         """
         Create an Anki card with the given question, answer, and screenshot.
+        Store it individually for later export.
         
         Args:
             question: The question text
             answer: The answer text
             screenshot: PIL Image object containing the screenshot
+            
+        Returns:
+            The ID of the created card
         """
         # Save the screenshot
         screenshot_filename = self.save_screenshot(screenshot)
@@ -158,13 +172,53 @@ class AnkiCardRepository:
             ]
         )
         
-        # Add the note to the deck
-        self.deck.add_note(note)
-        logger.info(f"Added note to deck: {question[:30]}...")
+        # Generate a unique ID for the card
+        card_id = uuid.uuid4().hex
+        
+        # Store the note in our list
+        self.notes.append(note)
+        
+        # Save card data to a file for persistence
+        card_data = {
+            'id': card_id,
+            'question': question,
+            'answer': answer,
+            'screenshot': screenshot_filename,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        # Save to a JSON file
+        import json
+        card_file_path = os.path.join(self.cards_data_dir, f"{card_id}.json")
+        with open(card_file_path, 'w') as f:
+            json.dump(card_data, f, indent=2)
+        
+        logger.info(f"Created card: {question[:30]}... (ID: {card_id})")
+        return card_id
     
-    def save_deck(self, filename: Optional[str] = None) -> str:
+    def build_deck(self) -> genanki.Deck:
         """
-        Save the deck to an .apkg file.
+        Build the deck by adding all stored notes.
+        
+        Returns:
+            The built deck
+        """
+        # Initialize a new deck
+        deck = genanki.Deck(ANKI_DECK_ID, self.deck_name)
+        
+        # Add all notes to the deck
+        for note in self.notes:
+            deck.add_note(note)
+        
+        logger.info(f"Built deck with {len(self.notes)} cards")
+        return deck
+    
+    def export_deck(self, filename: Optional[str] = None) -> str:
+        """
+        Export the deck to an .apkg file.
+        
+        This method exports the deck to an .apkg file and automatically
+        cleans up all working data while preserving the exported deck.
         
         Args:
             filename: Optional filename for the .apkg file
@@ -184,21 +238,69 @@ class AnkiCardRepository:
         # Create the full path
         filepath = os.path.join(self.cards_dir, filename)
         
-        # Get all media files
-        media_files = [os.path.join(self.media_dir, f) for f in os.listdir(self.media_dir)]
+        # Build the deck
+        deck = self.build_deck()
         
         # Create a package and write it to a file
-        package = genanki.Package(self.deck)
-        package.media_files = media_files
+        package = genanki.Package(deck)
+        package.media_files = self.media_files
         package.write_to_file(filepath)
         
-        logger.info(f"Saved deck to {filepath} with {len(self.deck.notes)} cards and {len(media_files)} media files")
+        logger.info(f"Exported deck to {filepath} with {len(deck.notes)} cards and {len(self.media_files)} media files")
+        
+        self.teardown(keep_exported_deck=True)
         
         return filepath
     
+    def teardown(self, keep_exported_deck: bool = True) -> None:
+        """
+        Clean up all working data after deck export.
+        
+        This method removes all temporary files created during the card creation process,
+        including screenshots in the media directory and card data files.
+        
+        Args:
+            keep_exported_deck: Whether to keep the exported .apkg file(s)
+        """
+        import shutil
+        
+        # Clear media files
+        for media_file in self.media_files:
+            try:
+                if os.path.exists(media_file):
+                    os.remove(media_file)
+                    logger.info(f"Removed media file: {media_file}")
+            except Exception as e:
+                logger.error(f"Error removing media file {media_file}: {e}")
+        
+        # Clear card data files
+        for card_file in os.listdir(self.cards_data_dir):
+            if card_file.endswith('.json'):
+                try:
+                    os.remove(os.path.join(self.cards_data_dir, card_file))
+                    logger.info(f"Removed card data file: {card_file}")
+                except Exception as e:
+                    logger.error(f"Error removing card data file {card_file}: {e}")
+        
+        # Optionally remove exported decks
+        if not keep_exported_deck:
+            for deck_file in os.listdir(self.cards_dir):
+                if deck_file.endswith('.apkg'):
+                    try:
+                        os.remove(os.path.join(self.cards_dir, deck_file))
+                        logger.info(f"Removed exported deck: {deck_file}")
+                    except Exception as e:
+                        logger.error(f"Error removing exported deck {deck_file}: {e}")
+        
+        # Reset internal state
+        self.notes = []
+        self.media_files = []
+        
+        logger.info("Teardown complete: all working data has been cleansed")
+    
     def create_and_save_card(self, question: str, answer: str, screenshot: Image.Image) -> str:
         """
-        Create a card and save the deck in one operation.
+        Create a card and store it.
         
         Args:
             question: The question text
@@ -206,10 +308,47 @@ class AnkiCardRepository:
             screenshot: PIL Image object containing the screenshot
             
         Returns:
-            The path to the saved .apkg file
+            The ID of the created card
         """
         # Create the card
-        self.create_card(question, answer, screenshot)
+        return self.create_card(question, answer, screenshot)
+    
+    def load_saved_cards(self) -> None:
+        """
+        Load previously saved cards from the cards data directory.
+        """
+        import json
         
-        # Save the deck
-        return self.save_deck()
+        # Clear existing notes
+        self.notes = []
+        
+        # Get all card data files
+        card_files = [f for f in os.listdir(self.cards_data_dir) if f.endswith('.json')]
+        
+        for card_file in card_files:
+            try:
+                with open(os.path.join(self.cards_data_dir, card_file), 'r') as f:
+                    card_data = json.load(f)
+                
+                # Create a note from the card data
+                note = genanki.Note(
+                    model=self.model,
+                    fields=[
+                        html.escape(card_data['question']),
+                        self.convert_markdown_to_html(html.escape(card_data['answer'])),
+                        f'<img src="{card_data["screenshot"]}">'
+                    ]
+                )
+                
+                # Add the note to our list
+                self.notes.append(note)
+                
+                # Make sure the screenshot is in our media files list
+                screenshot_path = os.path.join(self.media_dir, card_data['screenshot'])
+                if os.path.exists(screenshot_path) and screenshot_path not in self.media_files:
+                    self.media_files.append(screenshot_path)
+                
+            except Exception as e:
+                logger.error(f"Error loading card from {card_file}: {e}")
+        
+        logger.info(f"Loaded {len(self.notes)} cards from saved data")

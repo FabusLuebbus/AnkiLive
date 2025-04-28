@@ -100,16 +100,33 @@ class Orchestrator:
         
         # Save card to Anki using genanki
         try:
-            apkg_path = self.anki_repository.create_and_save_card(question, answer, screenshot)
-            logger.info(f"Anki card saved to {apkg_path}")
+            card_id = self.anki_repository.create_and_save_card(question, answer, screenshot)
+            logger.info(f"Anki card created with ID: {card_id}")
             print(f"Flashcard created with question: {question}")
             print(f"Answer/notes: {answer[:50]}..." if len(answer) > 50 else f"Answer/notes: {answer}")
-            print(f"Anki package saved to: {apkg_path}")
+            print(f"Card ID: {card_id}")
         except Exception as e:
             logger.error(f"Error saving Anki card: {str(e)}")
             print(f"Error saving Anki card: {str(e)}")
         
 
+
+    def export_deck(self) -> str:
+        """
+        Export all cards to an Anki deck file.
+        
+        Returns:
+            The path to the exported deck file
+        """
+        try:
+            apkg_path = self.anki_repository.export_deck()
+            logger.info(f"Exported Anki deck to {apkg_path}")
+            print(f"Anki deck exported to: {apkg_path}")
+            return apkg_path
+        except Exception as e:
+            logger.error(f"Error exporting Anki deck: {str(e)}")
+            print(f"Error exporting Anki deck: {str(e)}")
+            return None
 
     def __del__(self):
         """Clean up resources when the object is destroyed."""

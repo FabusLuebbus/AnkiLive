@@ -27,9 +27,13 @@ def main():
         try:
             # Check if the key is ESC
             if key == keyboard.Key.esc:
+                orchestrator.export_deck()
                 print("Exiting AnkiLive.")
+
                 # Stop the listener
+
                 return False
+
         except AttributeError:
             pass
         return True
