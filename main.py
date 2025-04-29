@@ -18,29 +18,24 @@ def main():
     # Create the orchestrator (registers keyboard shortcut)
     orchestrator = Orchestrator()
     
-    print(f"AnkiLive is running. Press {orchestrator.shortcut} to capture a screenshot.")
-    print("Press ESC to exit.")
+    print(f"AnkiLive is running.")
+    print(f"Press {orchestrator.capture_shortcut} to capture a screenshot (can be used multiple times).")
+    print(f"Press {orchestrator.create_card_shortcut} to open the flashcard dialog with all captured screenshots.")
+    print(f"Press {orchestrator.reset_shortcut} to reset all captured screenshots.")
+    print(f"Press {orchestrator.exit_shortcut} to export the deck and exit.")
+    print(f"You can also click the 'Add Screenshot' button in the dialog to capture more screenshots.")
     
-    # Keep the program running until ESC is pressed
-    # Create a function to check for ESC key
-    def on_press(key):
-        try:
-            # Check if the key is ESC
-            if key == keyboard.Key.esc:
-                orchestrator.export_deck()
-                print("Exiting AnkiLive.")
-
-                # Stop the listener
-
-                return False
-
-        except AttributeError:
-            pass
-        return True
-    
-    # Create and start a keyboard listener
-    with keyboard.Listener(on_press=on_press) as listener:
-        listener.join()
+    # Keep the program running until the exit shortcut is pressed
+    # The exit functionality is now handled by the orchestrator
+    try:
+        # Just keep the main thread alive
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully
+        orchestrator.export_deck()
+        print("Exiting AnkiLive.")
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ ANKI_DECK_ID = 2059400110  # Replace with a generated ID
 
 
 class AnkiCardModel:
-    """Model for Anki cards with screenshot, question, and answer."""
+    """Model for Anki cards with multiple screenshots, question, and answer."""
     
     def __init__(self):
         """Initialize the Anki card model."""
@@ -40,13 +40,13 @@ class AnkiCardModel:
             fields=[
                 {'name': 'Question'},
                 {'name': 'Answer'},
-                {'name': 'Screenshot'},
+                {'name': 'Screenshots'},
             ],
             templates=[
                 {
                     'name': 'Card 1',
                     'qfmt': '{{Question}}',
-                    'afmt': '{{FrontSide}}<hr id="answer">{{Screenshot}}<br>{{Answer}}',
+                    'afmt': '{{FrontSide}}<hr id="answer">{{Screenshots}}<br>{{Answer}}',
                 },
             ],
             css="""
@@ -131,6 +131,24 @@ class AnkiCardRepository:
         self.media_files.append(filepath)
         
         return filename
+        
+    def save_screenshots(self, screenshots: list[Image.Image]) -> list[str]:
+        """
+        Save multiple screenshots to the media directory.
+        
+        Args:
+            screenshots: List of PIL Image objects containing the screenshots
+            
+        Returns:
+            List of filenames of the saved screenshots
+        """
+        filenames = []
+        for screenshot in screenshots:
+            filename = self.save_screenshot(screenshot)
+            filenames.append(filename)
+        
+        logger.info(f"Saved {len(filenames)} screenshots")
+        return filenames
     
     def convert_markdown_to_html(self, text: str) -> str:
         """
@@ -146,21 +164,26 @@ class AnkiCardRepository:
         # The 'extras' parameter enables additional markdown features
         return markdown.markdown(text, extensions=['extra'])
     
-    def create_card(self, question: str, answer: str, screenshot: Image.Image) -> str:
+    def create_card(self, question: str, answer: str, screenshots: list[Image.Image]) -> str:
         """
-        Create an Anki card with the given question, answer, and screenshot.
+        Create an Anki card with the given question, answer, and screenshots.
         Store it individually for later export.
         
         Args:
             question: The question text
             answer: The answer text
-            screenshot: PIL Image object containing the screenshot
+            screenshots: List of PIL Image objects containing the screenshots
             
         Returns:
             The ID of the created card
         """
-        # Save the screenshot
-        screenshot_filename = self.save_screenshot(screenshot)
+        # Save the screenshots
+        screenshot_filenames = self.save_screenshots(screenshots)
+        
+        # Create HTML for multiple screenshots
+        screenshots_html = ""
+        for filename in screenshot_filenames:
+            screenshots_html += f'<img src="{filename}">'
         
         # Create a note
         note = genanki.Note(
@@ -168,7 +191,7 @@ class AnkiCardRepository:
             fields=[
                 html.escape(question),
                 self.convert_markdown_to_html(html.escape(answer)),
-                f'<img src="{screenshot_filename}">'
+                screenshots_html
             ]
         )
         
@@ -183,7 +206,7 @@ class AnkiCardRepository:
             'id': card_id,
             'question': question,
             'answer': answer,
-            'screenshot': screenshot_filename,
+            'screenshots': screenshot_filenames,
             'created_at': datetime.now().isoformat()
         }
         
@@ -298,20 +321,20 @@ class AnkiCardRepository:
         
         logger.info("Teardown complete: all working data has been cleansed")
     
-    def create_and_save_card(self, question: str, answer: str, screenshot: Image.Image) -> str:
+    def create_and_save_card(self, question: str, answer: str, screenshots: list[Image.Image]) -> str:
         """
         Create a card and store it.
         
         Args:
             question: The question text
             answer: The answer text
-            screenshot: PIL Image object containing the screenshot
+            screenshots: List of PIL Image objects containing the screenshots
             
         Returns:
             The ID of the created card
         """
         # Create the card
-        return self.create_card(question, answer, screenshot)
+        return self.create_card(question, answer, screenshots)
     
     def load_saved_cards(self) -> None:
         """
@@ -331,22 +354,34 @@ class AnkiCardRepository:
                     card_data = json.load(f)
                 
                 # Create a note from the card data
+                screenshots_html = ""
+                
+                # Handle both old format (single screenshot) and new format (multiple screenshots)
+                if 'screenshot' in card_data:
+                    # Old format with single screenshot
+                    screenshots_html = f'<img src="{card_data["screenshot"]}">'
+                    screenshot_path = os.path.join(self.media_dir, card_data['screenshot'])
+                    if os.path.exists(screenshot_path) and screenshot_path not in self.media_files:
+                        self.media_files.append(screenshot_path)
+                elif 'screenshots' in card_data:
+                    # New format with multiple screenshots
+                    for screenshot_filename in card_data['screenshots']:
+                        screenshots_html += f'<img src="{screenshot_filename}">'
+                        screenshot_path = os.path.join(self.media_dir, screenshot_filename)
+                        if os.path.exists(screenshot_path) and screenshot_path not in self.media_files:
+                            self.media_files.append(screenshot_path)
+                
                 note = genanki.Note(
                     model=self.model,
                     fields=[
                         html.escape(card_data['question']),
                         self.convert_markdown_to_html(html.escape(card_data['answer'])),
-                        f'<img src="{card_data["screenshot"]}">'
+                        screenshots_html
                     ]
                 )
                 
                 # Add the note to our list
                 self.notes.append(note)
-                
-                # Make sure the screenshot is in our media files list
-                screenshot_path = os.path.join(self.media_dir, card_data['screenshot'])
-                if os.path.exists(screenshot_path) and screenshot_path not in self.media_files:
-                    self.media_files.append(screenshot_path)
                 
             except Exception as e:
                 logger.error(f"Error loading card from {card_file}: {e}")

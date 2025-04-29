@@ -19,6 +19,7 @@ from pynput import keyboard
 from src.screenshot.gnome_screenshot_client import ScreenshotClient, GnomeScreenshotClient
 from src.ui import get_flashcard_input
 from src.anki_card_repository import AnkiCardRepository
+from src.ui.input_dialog import FlashcardInputDialog
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -51,14 +52,30 @@ class Orchestrator:
         # Initialize the Anki card repository
         self.anki_repository = AnkiCardRepository(cards_dir=cards_dir)
         
-        # Register keyboard shortcut to trigger workflow
-        # Define shortcut in pynput format: a sequence of keys
-        self.shortcut = "<ctrl>+<shift>+<alt>+s"  # Human-readable version for display
+        # Register keyboard shortcuts
+        # Define shortcuts in pynput format: a sequence of keys
+        self.capture_shortcut = "<ctrl>+<shift>+<alt>+s"  # For capturing screenshots
+        self.create_card_shortcut = "<ctrl>+<shift>+<alt>+c"  # For creating a card with captured screenshots
+        self.reset_shortcut = "<ctrl>+<shift>+<alt>+r"  # For resetting captured screenshots
+        self.exit_shortcut = "<ctrl>+<esc>"  # For exiting the application
         
-        # Set up the hotkey listener using pynput
-        self.hotkey = keyboard.HotKey(
-            keyboard.HotKey.parse(self.shortcut),
-            self.run
+        # Temporary storage for captured screenshots
+        self.captured_screenshots = []
+        
+        # Set up the hotkey listeners using pynput
+        self.capture_hotkey = keyboard.HotKey(
+            keyboard.HotKey.parse(self.capture_shortcut),
+            self.capture_and_store_screenshot
+        )
+        
+        self.create_card_hotkey = keyboard.HotKey(
+            keyboard.HotKey.parse(self.create_card_shortcut),
+            self.open_card_dialog
+        )
+        
+        self.reset_hotkey = keyboard.HotKey(
+            keyboard.HotKey.parse(self.reset_shortcut),
+            self.reset_screenshots
         )
         
         # Create a function to handle canonical key events
@@ -67,43 +84,106 @@ class Orchestrator:
         
         # Start the keyboard listener
         self.listener = keyboard.Listener(
-            on_press=for_canonical(self.hotkey.press),
-            on_release=for_canonical(self.hotkey.release)
+            on_press=for_canonical(lambda k: self.on_key_press(k)),
+            on_release=for_canonical(lambda k: self.on_key_release(k))
         )
         self.listener.start()
         
-        logger.info(f"Registered keyboard shortcut: {self.shortcut}")
+        # Initialize dialog reference
+        self.current_dialog = None
+        
+    
+    def on_key_press(self, key):
+        """Handle key press events."""
+        self.capture_hotkey.press(key)
+        self.create_card_hotkey.press(key)
+        self.reset_hotkey.press(key)
+    
+    def on_key_release(self, key):
+        """Handle key release events."""
+        self.capture_hotkey.release(key)
+        self.create_card_hotkey.release(key)
+        self.reset_hotkey.release(key)
+    
+  
 
-    def run(self):
-        """Run the main application workflow."""
-        # Get screenshot using the screenshot client
+    def capture_screenshot(self):
+        """
+        Capture a screenshot using the screenshot client.
+        
+        Returns:
+            The captured screenshot as a PIL Image, or None if capture failed
+        """
         logger.info("Capturing screenshot...")
         print("Please select an area of the screen to capture...")
         
         try:
             screenshot = self.screenshot_client.get_screenshot()
             logger.info(f"Screenshot captured: {screenshot.width}x{screenshot.height}")
+            return screenshot
         except Exception as e:
             logger.error(f"Error capturing screenshot: {str(e)}")
             print(f"Error: {str(e)}")
+            return None
+    
+    def capture_and_store_screenshot(self):
+        """Capture a screenshot and store it for later use."""
+        screenshot = self.capture_screenshot()
+        if screenshot is None:
             return
+        
+        # Add the screenshot to our temporary storage
+        self.captured_screenshots.append(screenshot)
+        print(f"Screenshot captured. Total screenshots: {len(self.captured_screenshots)}")
+    
+    def reset_screenshots(self):
+        """Reset the captured screenshots."""
+        if self.captured_screenshots:
+            count = len(self.captured_screenshots)
+            self.captured_screenshots = []
+            print(f"Reset {count} captured screenshots.")
+        else:
+            print("No screenshots to reset.")
+    
+    def open_card_dialog(self):
+        """Open the card dialog with all captured screenshots."""
+        # Check if we have any screenshots
+        if not self.captured_screenshots:
+            print("No screenshots captured yet. Use the capture shortcut first.")
+            return
+        
         # Get question and answer inputs from the user
         logger.info("Getting flashcard inputs...")
-        result = get_flashcard_input()
+        logger.info(f"Using {len(self.captured_screenshots)} previously captured screenshots")
+        
+        # Get flashcard input using the dialog
+        result = get_flashcard_input(
+            screenshots=self.captured_screenshots.copy(),
+            screenshot_callback=self.capture_screenshot
+        )
+        
+        # Force a garbage collection to ensure the dialog is properly cleaned up
+        import gc
+        gc.collect()
         
         if result is None:
             logger.info("Flashcard creation cancelled by user")
             return
         
-        question, answer = result
+        question, answer, screenshots = result
         logger.info(f"Flashcard inputs received - Question: {question[:30]}...")
+        logger.info(f"Number of screenshots: {len(screenshots)}")
+        
+        # Reset the captured screenshots after creating a card
+        self.captured_screenshots = []
         
         # Save card to Anki using genanki
         try:
-            card_id = self.anki_repository.create_and_save_card(question, answer, screenshot)
+            card_id = self.anki_repository.create_and_save_card(question, answer, screenshots)
             logger.info(f"Anki card created with ID: {card_id}")
             print(f"Flashcard created with question: {question}")
             print(f"Answer/notes: {answer[:50]}..." if len(answer) > 50 else f"Answer/notes: {answer}")
+            print(f"Number of screenshots: {len(screenshots)}")
             print(f"Card ID: {card_id}")
         except Exception as e:
             logger.error(f"Error saving Anki card: {str(e)}")

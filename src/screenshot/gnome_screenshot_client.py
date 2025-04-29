@@ -42,6 +42,24 @@ class GnomeScreenshotClient(ScreenshotClient):
         logger.debug(f"Temporary file created at {temp_path}")
             
         try:
+            # Check if gnome-screenshot is available
+            try:
+                # Try to run gnome-screenshot with --version to check if it's installed
+                subprocess.run(['gnome-screenshot', '--version'],
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                # gnome-screenshot is not available, show installation instructions
+                error_msg = (
+                    "gnome-screenshot is not installed. Please install it with:\n"
+                    "  sudo apt-get install gnome-screenshot  # For Debian/Ubuntu\n"
+                    "  sudo dnf install gnome-screenshot      # For Fedora\n"
+                    "  sudo pacman -S gnome-screenshot        # For Arch Linux"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
+                
             # Run gnome-screenshot with area selection (-a flag)
             logger.debug(f"Capturing screenshot to {temp_path}")
             subprocess.run(
