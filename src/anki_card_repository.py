@@ -251,8 +251,10 @@ class AnkiCardRepository:
         """
         if filename is None:
             # Generate a filename based on the deck name and current date
+            # Sanitize the deck name for use in a filename
+            sanitized_name = self.deck_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
             date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{self.deck_name.replace(' ', '_')}_{date_str}.apkg"
+            filename = f"{sanitized_name}_{date_str}.apkg"
         
         # Ensure the filename has the .apkg extension
         if not filename.endswith('.apkg'):

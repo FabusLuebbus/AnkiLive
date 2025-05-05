@@ -5,8 +5,22 @@ This is the main entry point for the application.
 """
 
 import logging
+import sys
 from pynput import keyboard
 from src.orchestrator import Orchestrator
+from src.ui import get_deck_name
+
+def get_deck_name_fallback():
+    """Simple fallback method to get deck name using console input."""
+    print("Please enter a name for your Anki deck (or press Enter for default 'AnkiLive'):")
+    try:
+        deck_name = input("> ").strip()
+        if not deck_name:
+            deck_name = "AnkiLive"
+        return deck_name
+    except (KeyboardInterrupt, EOFError):
+        print("\nUsing default deck name: AnkiLive")
+        return "AnkiLive"
 
 
 def main():
@@ -15,8 +29,22 @@ def main():
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
-    # Create the orchestrator (registers keyboard shortcut)
-    orchestrator = Orchestrator()
+    # Ask for the deck name at startup
+    print("Welcome to AnkiLive!")
+    
+    # Try to use the GUI dialog first
+    try:
+        # Get the deck name from the user using the GUI dialog
+        deck_name = get_deck_name()
+        print(f"Using deck name: {deck_name}")
+    except Exception as e:
+        # If there's an error with the GUI dialog, fall back to console input
+        print(f"Error with GUI dialog: {e}")
+        print("Falling back to console input...")
+        deck_name = get_deck_name_fallback()
+    
+    # Create the orchestrator with the provided deck name
+    orchestrator = Orchestrator(deck_name=deck_name)
     
     print(f"AnkiLive is running.")
     print(f"Press {orchestrator.capture_shortcut} to capture a screenshot (can be used multiple times).")

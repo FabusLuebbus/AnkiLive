@@ -31,26 +31,29 @@ class Orchestrator:
     def __init__(
         self,
         cards_dir: str = "cards",
+        deck_name: str = "AnkiLive",
     ):
         """
         Initialize the orchestrator.
         
         Args:
             cards_dir: Directory to store card files
+            deck_name: Name of the Anki deck
             container: Optional DI container to use
             settings_override: Optional settings to override
             screenshot_client: Optional screenshot client to use
         """
-        # Store the cards directory
+        # Store the cards directory and deck name
         self.cards_dir = cards_dir
+        self.deck_name = deck_name
         
         # Ensure cards directory exists
         os.makedirs(cards_dir, exist_ok=True)
         
         self.screenshot_client: ScreenshotClient = GnomeScreenshotClient()
         
-        # Initialize the Anki card repository
-        self.anki_repository = AnkiCardRepository(cards_dir=cards_dir)
+        # Initialize the Anki card repository with the deck name
+        self.anki_repository = AnkiCardRepository(cards_dir=cards_dir, deck_name=deck_name)
         
         # Register keyboard shortcuts
         # Define shortcuts in pynput format: a sequence of keys
@@ -194,10 +197,17 @@ class Orchestrator:
     def export_deck(self) -> str:
         """
         Export all cards to an Anki deck file.
+        Only exports decks that have more than 0 cards.
         
         Returns:
-            The path to the exported deck file
+            The path to the exported deck file or None if no cards to export
         """
+        # Check if there are any cards to export
+        if len(self.anki_repository.notes) == 0:
+            logger.info("No cards to export")
+            print("No cards to export. Please create at least one card first.")
+            return None
+            
         try:
             apkg_path = self.anki_repository.export_deck()
             logger.info(f"Exported Anki deck to {apkg_path}")
