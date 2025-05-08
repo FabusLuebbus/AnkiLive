@@ -1,6 +1,6 @@
 # AnkiLive
 
-A tool for creating Anki flashcards from lecture slides.
+A tool for creating Anki flashcards from lecture slides without having to jump back and forth between the pdf viewer and anki.
 
 ## Overview
 
@@ -25,18 +25,17 @@ AnkiLive streamlines the workflow of creating Anki flashcards from lecture slide
 ## Requirements
 
 - Python 3.13+
-- Dependencies:
+- Dependencies (automatically managed by uv):
   - tkinter (included with Python)
-  - keyboard
-  - Pillow (PIL)
+  - pynput (for keyboard shortcuts)
+  - Pillow (PIL) (for image processing)
+  - genanki (for creating and exporting Anki decks)
+  - markdown (for converting markdown to HTML)
 
 ## Installation
 
 1. Clone this repository
-2. Install Python dependencies:
-   ```
-   uv add keyboard Pillow
-   ```
+2. The project uses uv for dependency management, so all dependencies are already specified in pyproject.toml
 
 3. Install system dependencies:
 
@@ -68,7 +67,7 @@ AnkiLive streamlines the workflow of creating Anki flashcards from lecture slide
 Run the application:
 
 ```
-python main.py
+uv run main.py
 ```
 
 ### Creating a Card
@@ -88,14 +87,46 @@ python main.py
 
 ### Exporting to Anki
 
-1. Click "Export to Anki" in the main window
-2. Import the generated file into Anki
+1. Press Ctrl+Esc to export the deck and exit the application
+2. The deck will be exported as a .apkg file in the `cards` directory
+3. Import the generated .apkg file into Anki
 
 ## Project Structure
 
 - `main.py` - Main application entry point
-- `screenshot.py` - Screen capture functionality
-- `ui.py` - User interface components for card creation and management
+- `src/` - Source code directory
+  - `anki_card_repository.py` - Handles creating, storing, and exporting Anki cards
+  - `orchestrator.py` - Main orchestrator coordinating between services and UI components
+  - `screenshot/` - Screenshot functionality
+    - `screenshot_client.py` - Abstract interface for screenshot clients
+    - `gnome_screenshot_client.py` - Implementation using gnome-screenshot
+  - `ui/` - User interface components
+    - `deck_name_dialog.py` - Dialog for getting deck name at startup
+    - `input_dialog.py` - Dialog for creating flashcards with screenshots
+- `cards/` - Directory for storing card data and exported decks
+
+## Features in Detail
+
+### Markdown Support
+
+The answer/notes field supports Markdown formatting:
+- Use `*` or `-` for bullet points
+- Basic text formatting (bold, italic, etc.)
+- The markdown is converted to HTML when exported to Anki
+
+### Multiple Screenshots per Card
+
+You can add multiple screenshots to a single card:
+- Capture screenshots one by one using the global hotkey
+- Add them all to a single card
+- Rearrange or remove screenshots as needed
+
+### Persistent Storage
+
+Cards are stored persistently:
+- Each card is saved as a JSON file in the `cards/data` directory
+- Screenshots are saved in the `cards/media` directory
+- Cards are loaded when the application starts
 
 ## Future Improvements
 
@@ -103,3 +134,5 @@ python main.py
 - Custom card templates
 - OCR for text extraction from slides
 - Tagging and categorization of cards
+- Support for additional screenshot tools beyond gnome-screenshot
+- Cross-platform screenshot support
